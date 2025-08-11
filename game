@@ -1,1 +1,1731 @@
-test
+-- StarterGui > GameGui > GameController (LocalScript)
+-- v StatFrame - Final Fixes + Game Modes + CLEAN FORMATTING v2 + Owner Ring + Reformat
+
+-- Services
+local Players = game:GetService("Players")
+local PhysicsService = game:GetService("PhysicsService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
+local TweenService = game:GetService("TweenService")
+local UserInputService = game:GetService("UserInputService")
+local Debris = game:GetService("Debris")
+local HttpService = game:GetService("HttpService") -- Used by server for GUIDs
+
+-- Player and Values
+local player = Players.LocalPlayer
+local serverPlacedTowersValue = player:WaitForChild("PlacedTowers")
+local gold = player:WaitForChild("Gold")
+
+-- Modules and Remotes
+local modules = ReplicatedStorage:WaitForChild("Modules")
+local health = require(modules:WaitForChild("Health"))
+local towers = ReplicatedStorage:WaitForChild("Towers") -- Base tower prefabs
+local towerUpgrades = ReplicatedStorage.Towers:FindFirstChild("Upgrades") -- Upgrade prefabs (Optional path)
+
+local functions = ReplicatedStorage:WaitForChild("Functions")
+local requestTowerFunction = functions:WaitForChild("RequestTower")
+local spawnTowerFunction = functions:WaitForChild("SpawnTower")
+local sellTowerFunction = functions:WaitForChild("SellTower")
+local changeModeFunction = functions:WaitForChild("ChangeTowerMode")
+local getDataFunction = functions:WaitForChild("GetData")
+
+local events = ReplicatedStorage:WaitForChild("Events")
+-- Tower/Game related events
+local animateTowerEvent = events:WaitForChild("AnimateTower")
+local updateTotalDamageEvent = events:WaitForChild("UpdateTotalDamage") -- Using GUID method
+-- Map/Mode Voting Events
+local VoteForMapEvent = events:WaitForChild("VoteForMap")
+local UpdateMapVoteCountEvent = events:WaitForChild("UpdateVoteCount")
+local VoteForModeEvent = events:WaitForChild("VoteForMode")
+local UpdateModeVoteCountEvent = events:WaitForChild("UpdateModeVoteCount")
+local ShowModeVoteEvent = events:WaitForChild("ShowModeVote")
+local HideModeVoteEvent = events:WaitForChild("HideModeVote")
+local GameModeSelectedEvent = events:WaitForChild("GameModeSelected")
+local AnimateDamageIndicatorEvent = events:WaitForChild("AnimateDamageIndicator") -- NEW
+
+-- Wave Display Events
+local UpdateNextWaveDisplayEvent = events:WaitForChild("UpdateNextWaveDisplay")
+local HideNextWaveDisplayEvent = events:WaitForChild("HideNextWaveDisplay")
+
+-- Services and Globals
+local camera = workspace.CurrentCamera
+local gui = script.Parent
+local info = workspace:WaitForChild("Info")
+
+local RequestGameSpeedChangeEvent = events:WaitForChild("RequestGameSpeedChange") -- The RemoteEvent for changing speed
+
+local GameSpeedValue = ReplicatedStorage:WaitForChild("Values"):WaitForChild("GameSpeed") -- Add 
+
+local speed1xButton = gui:WaitForChild("Speed1xButton") -- Add this line
+local speed2xButton = gui:WaitForChild("Speed2xButton") -- Add this line
+
+
+
+-- ============================================
+--          UI Element References
+-- ============================================
+-- Main Game UI
+local mapVotingFrame = gui:WaitForChild("Voting")
+
+local mainUpgradeFrame = gui:WaitForChild("MainUpgradeFrame")
+mainUpgradeFrame.Visible = false -- Start hidden
+
+-- Left Panel (NEW)
+local leftPanel = mainUpgradeFrame:WaitForChild("LeftPanel")
+local sfTowerPortrait = leftPanel:WaitForChild("TowerPortrait") -- Assuming ImageLabel
+local sfTowerName = leftPanel:WaitForChild("LevelLabel") -- Assuming TextLabel (NEW, if you want name here too)
+local sfLevelLabel = leftPanel:WaitForChild("LevelLabel") -- Assuming TextLabel (NEW, for level display)
+local sfSellButton = leftPanel:WaitForChild("SellButton")
+local sfTargetButton = leftPanel:WaitForChild("TargetButton")
+-- local sfEscapeButton -- No explicit escape button in this new layout, handled by clicking off or another tower
+
+local sfTowerNameAndLevelLabel = mainUpgradeFrame:WaitForChild("TowerName") -- 
+
+
+-- Stats Panel (NEW)
+local statsPanel = mainUpgradeFrame:WaitForChild("StatsPanel")
+local statsTitle = statsPanel:WaitForChild("StatsTitle") -- The template for stat lines
+statsTitle.Visible = false -- Hide template
+
+-- Upgrade Paths Container (NEW)
+local upgradePathsContainer = mainUpgradeFrame:WaitForChild("UpgradePathsContainer")
+local sfLevelLabel_InLeftPanel = leftPanel:WaitForChild("LevelLabel")
+
+-- Path 1 Box (NEW)
+local path1Box = upgradePathsContainer:WaitForChild("Path1Box")
+local path1Title = path1Box:WaitForChild("Path1Title") -- TextLabel, e.g., "Path 1: [Upgrade Name]"
+local description1Frame = path1Box:WaitForChild("Description1Frame")
+local upgradeText1Template = description1Frame:WaitForChild("UpgradeText1") -- Template for stat changes
+upgradeText1Template.Visible = false -- Hide template
+local path1CostButton = path1Box:WaitForChild("Path1CostButton") -- TextButton
+
+-- Path 2 Box (NEW)
+local path2Box = upgradePathsContainer:WaitForChild("Path2Box")
+local path2Title = path2Box:WaitForChild("Path2Title") -- TextLabel
+local description2Frame = path2Box:WaitForChild("Description2Frame")
+local upgradeText2Template = description2Frame:WaitForChild("UpgradeText2") -- Template for stat changes
+upgradeText2Template.Visible = false -- Hide template
+local path2CostButton = path2Box:WaitForChild("Path2CostButton") -- TextButton
+
+-- Mode Voting UI (New)
+local votingModeFrame = gui:WaitForChild("VotingMode")
+local modesContainer = votingModeFrame:WaitForChild("Modes")
+local easyModeButton = modesContainer:FindFirstChild("Easy")
+local infModeButton = modesContainer:FindFirstChild("InfMode")
+
+-- Next Wave Display UI (New)
+local nextWaveFrame = gui:WaitForChild("NextWave")
+local nextWaveTemplate = gui:WaitForChild("TextTemplateNextWave")
+
+
+-- Other UI
+local controlsFrame = gui:WaitForChild("Controls")
+local towersFrame = gui:WaitForChild("Towers")
+local infoFrame = gui:WaitForChild("Info")
+local endScreenFrame = gui:WaitForChild("EndScreen")
+
+-- Visuals (Owner Ring Template)
+local rangeTemplate = ReplicatedStorage:WaitForChild("Range") -- The template part for the range indicator
+local ringTemplateVisual = ReplicatedStorage:WaitForChild("Ring") -- The template part for the range indicator
+local currentRangeCircle = nil -- To keep track of the currently displayed range circle
+
+local upgradeButtonDebounce = false
+local DEBOUNCE_TIME = 0.5 -- seconds
+
+votingModeFrame.Visible = false
+nextWaveFrame.Visible = false
+
+if nextWaveTemplate then
+	nextWaveTemplate.Visible = false
+end
+
+local towerTemplate = towersFrame:FindFirstChild("Template")
+
+if towerTemplate then
+	towerTemplate.Visible = false
+end
+
+-- ============================================
+--          Core Variables
+-- ============================================
+local hoveredInstance = nil
+local selectedTower = nil
+local towerToSpawn = nil
+local canPlace = false
+local rotation = 0
+local maxTowers = 8
+local lastTouch = tick()
+local selectedTowerSlots = {}
+
+-- Game State Tracking (Client-side)
+local currentSelectedMode = "Easy"
+local modeVoteActive = false
+
+-- Connection storage (basic)
+local voteButtonConnections = {}
+local modeVoteButtonConnections = {}
+local voteCountConnection = nil
+local modeVoteCountConnection = nil
+local msgChangedConnection = nil
+local gameRunningConnection = nil
+local votingChangedConnection = nil -- Map voting state
+
+-- Sway Settings (Add these lines)
+local Rad = math.rad
+local TweenInfoSway = TweenInfo.new(.05, Enum.EasingStyle.Sine) -- Controls smoothness (video uses 0.05)
+local offset = Vector3.new(0,0.5,0) -- Can be used if part needs to be raised slightly (adjust if needed)
+local sway = 44 -- Sway multiplier (video uses 69, adjust for more/less sway)
+local MaxAngle = 15 -- Maximum tilt angle in degrees (video uses 15)
+local OldCFrame = nil -- To store the previous frame's CFrame for sway calculation
+
+local currentConeVisual = nil
+
+-- ============================================
+--          Helper Functions
+-- ============================================
+
+-- Place this function somewhere in your helper function section
+
+local function UpdateSpeedButtonVisuals()
+	-- Ensure the GameSpeedValue reference exists (should be defined near the top of the script)
+	if not GameSpeedValue then
+		warn("UpdateSpeedButtonVisuals: GameSpeedValue reference is missing!")
+		return
+	end
+
+	local currentSpeed = GameSpeedValue.Value
+
+	-- Check if the buttons exist before trying to access them
+	if speed1xButton then
+		speed1xButton.Active = (currentSpeed ~= 1) -- Enable button if speed is NOT 1x
+		speed1xButton.TextTransparency = (currentSpeed == 1) and 0.5 or 0 -- Dim text if speed IS 1x (active state)
+	else
+		-- warn("UpdateSpeedButtonVisuals: speed1xButton UI element not found!") -- Optional warning
+	end
+
+	if speed2xButton then
+		speed2xButton.Active = (currentSpeed ~= 2) -- Enable button if speed is NOT 2x
+		speed2xButton.TextTransparency = (currentSpeed == 2) and 0.5 or 0 -- Dim text if speed IS 2x (active state)
+	else
+		-- warn("UpdateSpeedButtonVisuals: speed2xButton UI element not found!") -- Optional warning
+	end
+end
+
+local function MouseRaycast(model)
+	local mousePosition = UserInputService:GetMouseLocation()
+	local mouseRay = camera:ViewportPointToRay(mousePosition.X, mousePosition.Y)
+	local raycastParams = RaycastParams.new()
+	local blacklist = { camera }
+	if player.Character then
+		table.insert(blacklist, player.Character)
+	end
+	if model then
+		table.insert(blacklist, model)
+	end
+	raycastParams.FilterType = Enum.RaycastFilterType.Blacklist
+	raycastParams.FilterDescendantsInstances = blacklist
+	raycastParams.IgnoreWater = true
+	local raycastResult = workspace:Raycast(mouseRay.Origin, mouseRay.Direction * 1000, raycastParams)
+	return raycastResult
+end
+
+local function CreateRangeCircle(tower, placeholder)
+	-- Get tower's range from its Config
+	local config = tower:FindFirstChild("Config")
+	if not config then
+		warn("CreateRangeCircle: Tower config not found for", tower.Name)
+		return nil
+	end
+	local rangeValue = config:FindFirstChild("Range")
+	if not rangeValue or typeof(rangeValue.Value) ~= "number" then
+		warn("CreateRangeCircle: Range value not found or not a number in config for", tower.Name)
+		return nil
+	end
+	local range = rangeValue.Value
+
+	-- Get tower's primary part (for positioning)
+	local towerPrimaryPart = tower:FindFirstChild("HumanoidRootPart") or tower.PrimaryPart
+	if not towerPrimaryPart then
+		warn("CreateRangeCircle: PrimaryPart/HumanoidRootPart not found for", tower.Name)
+		return nil
+	end
+
+	-- Variables from the video's code structure
+	local height = (towerPrimaryPart.Size.Y / 0.65) -- Video uses tower's "Left Leg" size, adapting to PrimaryPart
+	-- If your tower model has a "Left Leg", you might use:
+	-- local leftLeg = tower:FindFirstChild("Left Leg", true)
+	-- local height = (leftLeg and leftLeg.Size.Y or towerPrimaryPart.Size.Y / 2)
+	local offset = CFrame.new(0, -height, 0) -- Offset to place it at the base
+
+	-- Create the main part for the range indicator
+	local p = Instance.new("Part")
+	p.Name = "Range" -- As per video
+	p.Size = Vector3.new(0, 0, 0) -- Initial size, will be tweened/set
+	p.TopSurface = Enum.SurfaceType.Smooth
+	p.BottomSurface = Enum.SurfaceType.Smooth
+	p.CanCollide = false
+	p.Shape = Enum.PartType.Cylinder
+	-- CFrame set after parenting and welding if placeholder, or directly if not
+	p.Transparency = 1 -- As per video
+	p.BrickColor = BrickColor.new("Medium stone grey") -- As per video
+	p.Anchored = false -- Will be set true if not placeholder, or welded
+
+	-- Create the SurfaceGui
+	local Surface = Instance.new("SurfaceGui", p)
+	Surface.Face = Enum.NormalId.Right -- As per video (this implies the cylinder stands up, and decal is on side)
+	-- This is different from my previous attempts to lay it flat.
+
+	-- Create the ImageLabel
+	local Image = Instance.new("ImageLabel", Surface)
+	Image.Image = "rbxassetid://18424403848" -- PASTE YOUR IMAGE ID HERE
+	Image.BackgroundTransparency = 1
+	Image.ImageTransparency = 0.5
+	Image.ImageColor3 = Color3.fromRGB(67, 67, 67)
+	Image.Size = UDim2.new(1, 0, 1, 0) -- Fill the SurfaceGui
+
+	if placeholder then
+		p.CFrame = towerPrimaryPart.CFrame * offset * CFrame.Angles(0, 0, math.rad(90)) -- Apply rotation for placeholder
+		local weld = Instance.new("WeldConstraint", p)
+		weld.Part0 = p
+		weld.Part1 = towerPrimaryPart
+		-- p.Anchored = false -- Already false
+
+		-- Tween size for placeholder (as seen in video)
+		TweenService:Create(p, TweenInfo.new(0.35, Enum.EasingStyle.Sine, Enum.EasingDirection.Out), {Size = Vector3.new(0.2, range * 2, range * 2)}):Play()
+		p.Parent = tower
+	else
+		p.CFrame = towerPrimaryPart.CFrame * offset * CFrame.Angles(0, 0, math.rad(90)) -- Apply rotation
+		p.Anchored = true
+		p.Size = Vector3.new(0.2, range * 2, range * 2) -- Set size directly
+		p.Parent = workspace.Camera
+	end
+
+	return p -- Return the created Part instance
+end
+
+local function ColorPlaceholderTower(color)
+	if not towerToSpawn then
+		return
+	end
+	for _, object in ipairs(towerToSpawn:GetDescendants()) do
+		if object:IsA("BasePart") and object.Name ~= "Range" then
+			object.Color = color
+		end
+	end
+end
+
+-- (Replace the existing CreateConeVisual function with this SIMPLIFIED AND MORE DIRECT version)
+local function CreateConeVisual(towerModel, range, coneAngleDegrees)
+	local towerRoot = towerModel:FindFirstChild("HumanoidRootPart") or towerModel.PrimaryPart
+	if not towerRoot then
+		warn("CreateConeVisual: TowerRoot not found for", towerModel.Name)
+		return nil
+	end
+	if range <= 0 then
+		warn("CreateConeVisual: Range is zero or negative for", towerModel.Name)
+		return nil
+	end
+
+	-- This model will contain all parts of the cone visual
+	local visualContainer = Instance.new("Model")
+	visualContainer.Name = "ConeAttackVisual"
+	-- Parent to the tower model so it gets cleaned up if the tower is destroyed
+	visualContainer.Parent = towerModel
+
+	-- This is the part that will be at the center of the cone's origin, on the ground
+	local coneOriginPart = Instance.new("Part")
+	coneOriginPart.Name = "ConeOriginPart"
+	coneOriginPart.Size = Vector3.new(0.1, 0.1, 0.1)
+	coneOriginPart.Transparency = 1
+	coneOriginPart.Anchored = false -- Must be unanchored for the weld to control it
+	coneOriginPart.CanCollide = false
+	coneOriginPart.Parent = visualContainer
+	visualContainer.PrimaryPart = coneOriginPart -- Set as PrimaryPart for the model
+
+	-- Calculate the desired WORLD CFrame for the coneOriginPart
+	-- It should be at the towerRoot's XZ position, but Y adjusted to be on the ground,
+	-- and oriented like the towerRoot.
+	local yPositionOnGround = towerRoot.Position.Y - (towerRoot.Size.Y / 2) - 0.8 -- Adjust 0.05 as needed
+	local desiredWorldCFrameForOrigin = CFrame.new(towerRoot.Position.X, yPositionOnGround, towerRoot.Position.Z) * (towerRoot.CFrame - towerRoot.CFrame.Position) -- Apply tower's orientation
+
+	-- Set the coneOriginPart to this desired world CFrame BEFORE welding
+	coneOriginPart.CFrame = desiredWorldCFrameForOrigin
+
+	-- Now, weld coneOriginPart to towerRoot.
+	-- The weld will try to maintain the *relative* CFrame between coneOriginPart and towerRoot.
+	-- Since we've just set coneOriginPart's CFrame, the weld will maintain this offset.
+	local weld = Instance.new("WeldConstraint")
+	weld.Part0 = coneOriginPart
+	weld.Part1 = towerRoot
+	weld.Parent = coneOriginPart
+
+	-- Attachments are LOCAL to coneOriginPart.
+	-- Since coneOriginPart is now correctly positioned and oriented in the world
+	-- and will rotate with towerRoot, these local definitions will form the cone correctly.
+
+	local attOrigin = Instance.new("Attachment")
+	attOrigin.Name = "OriginAttachment"
+	attOrigin.Position = Vector3.new(0, 0, 0) -- At the center of coneOriginPart
+	attOrigin.Parent = coneOriginPart
+
+	local halfAngleRad = math.rad(coneAngleDegrees / 2)
+
+	local attEdge1 = Instance.new("Attachment")
+	attEdge1.Name = "Edge1Attachment"
+	attEdge1.CFrame = CFrame.Angles(0, halfAngleRad, 0) * CFrame.new(0, 0, -range) -- Local CFrame
+	attEdge1.Parent = coneOriginPart
+
+	local attEdge2 = Instance.new("Attachment")
+	attEdge2.Name = "Edge2Attachment"
+	attEdge2.CFrame = CFrame.Angles(0, -halfAngleRad, 0) * CFrame.new(0, 0, -range) -- Local CFrame
+	attEdge2.Parent = coneOriginPart
+
+	-- Beams
+	local beamColor = Color3.fromRGB(0, 255, 0)
+	local beamWidth = 0.2
+	local beamTransparency = NumberSequence.new(0.2)
+
+	local beam1 = Instance.new("Beam")
+	beam1.Name = "ConeLine1"; beam1.Attachment0 = attOrigin; beam1.Attachment1 = attEdge1
+	beam1.Color = ColorSequence.new(beamColor); beam1.LightEmission = 0.1; beam1.LightInfluence = 0
+	beam1.Transparency = beamTransparency; beam1.Width0 = beamWidth; beam1.Width1 = beamWidth
+	beam1.Segments = 1; beam1.Enabled = true
+	beam1.Parent = coneOriginPart -- Parent to the origin part
+
+	local beam2 = Instance.new("Beam")
+	beam2.Name = "ConeLine2"; beam2.Attachment0 = attOrigin; beam2.Attachment1 = attEdge2
+	beam2.Color = ColorSequence.new(beamColor); beam2.LightEmission = 0.1; beam2.LightInfluence = 0
+	beam2.Transparency = beamTransparency; beam2.Width0 = beamWidth; beam2.Width1 = beamWidth
+	beam2.Segments = 1; beam2.Enabled = true
+	beam2.Parent = coneOriginPart -- Parent to the origin part
+
+	-- print("Cone visual created. coneOriginPart World CFrame:", coneOriginPart.CFrame)
+	return visualContainer
+end
+
+-- ============================================
+--          NEW FUNCTION: AddOwnerRing
+-- ============================================
+
+local function AddOwnerRing(towerInstance)
+	if not towerInstance or not towerInstance:IsA("Model") or not towerInstance.Parent then
+		warn("AddOwnerRing: Invalid tower instance provided.")
+		return
+	end
+
+	local config = towerInstance:FindFirstChild("Config")
+	local ownerValue = config and config:FindFirstChild("Owner")
+	local primaryPart = towerInstance.PrimaryPart or towerInstance:FindFirstChild("HumanoidRootPart")
+
+	if not primaryPart then
+		warn("AddOwnerRing: Tower instance", towerInstance.Name, "missing PrimaryPart/HumanoidRootPart.")
+		return
+	end
+
+	-- Check if the local player is the owner
+	if ownerValue and ownerValue.Value == player.Name then
+		if not ringTemplateVisual then
+			warn("AddOwnerRing: Ring template ('ReplicatedStorage.Visual.Ring') not found.")
+			return
+		end
+
+		-- Check if a ring already exists
+		if towerInstance:FindFirstChild("OwnerRing") then
+			return
+		end
+
+		print("AddOwnerRing: Adding ring for owned tower:", towerInstance.Name)
+
+		-- Clone the ring template
+		local ringClone = ringTemplateVisual:Clone()
+		ringClone.Name = "OwnerRing"
+
+		-- Define desired ring size
+		local ringSize = Vector3.new(primaryPart.Size.X + 2, 0.2, primaryPart.Size.Z + 2)
+		if ringClone:IsA("BasePart") then
+			ringClone.Size = ringSize
+		elseif ringClone:IsA("Model") and ringClone.PrimaryPart then
+			ringClone.PrimaryPart.Size = ringSize
+		end
+
+		ringClone.CanCollide = false
+		ringClone.Anchored = false
+
+		-- Position the ring
+		local ringYOffset = (primaryPart.Size.Y / 2) * -1 - 0.75
+		ringClone.CFrame = primaryPart.CFrame * CFrame.new(0, ringYOffset, 0)
+
+		-- Parent the ring
+		ringClone.Parent = towerInstance
+
+		-- Weld the ring
+		local weld = Instance.new("WeldConstraint")
+		weld.Part0 = ringClone
+		weld.Part1 = primaryPart
+		weld.Parent = ringClone
+
+	end -- No 'else' needed, just don't add the ring if not owner
+end
+-- ============================================
+
+local function RemovePlaceholderTower()
+	if towerToSpawn then
+		-- If the placeholder had a range indicator part
+		local rangeIndicator = towerToSpawn:FindFirstChild("RangeIndicatorDisplay") -- Or "RangeIndicatorPart" if that's the name
+		if rangeIndicator then
+			rangeIndicator:Destroy()
+		end
+		-- Also ensure currentRangeCircle (for selected tower) is cleared if it was the placeholder's
+		if currentRangeCircle and currentRangeCircle.Parent == towerToSpawn then
+			currentRangeCircle:Destroy()
+			currentRangeCircle = nil
+		end
+
+		towerToSpawn:Destroy()
+		towerToSpawn = nil
+		rotation = 0
+		controlsFrame.Visible = false
+		selectedTower = nil 
+
+		-- Clean up visuals that might be active from a previously selected tower
+		if currentRangeCircle and currentRangeCircle.Parent then 
+			currentRangeCircle:Destroy()
+			currentRangeCircle = nil
+		end
+		if currentConeVisual and currentConeVisual.Parent then
+			currentConeVisual:Destroy()
+			currentConeVisual = nil
+		end
+	end
+end
+
+local function AddPlaceholderTower(name)
+	local towerExists = towers:FindFirstChild(name)
+	if not towerExists then
+		if towerUpgrades then
+			towerExists = towerUpgrades:FindFirstChild(name)
+		end
+	end
+
+	if towerExists then
+		RemovePlaceholderTower()
+
+		towerToSpawn = towerExists:Clone()
+
+		if not towerToSpawn.PrimaryPart then
+			towerToSpawn.PrimaryPart = towerToSpawn:FindFirstChild("HumanoidRootPart")
+		end
+		if not towerToSpawn.PrimaryPart then
+			warn("AddPlaceholderTower: No PrimaryPart found for placeholder:", name)
+			towerToSpawn:Destroy()
+			towerToSpawn = nil
+			return
+		end
+
+		towerToSpawn.Parent = workspace
+
+		local rangeCircleInstance = CreateRangeCircle(towerToSpawn, true)
+
+		for _, obj in ipairs(towerToSpawn:GetDescendants()) do
+			if obj:IsA("BasePart") then
+				PhysicsService:SetPartCollisionGroup(obj, "Tower")
+				if obj.Name ~= "RangeIndicator" then
+					obj.Material = Enum.Material.ForceField
+					obj.Transparency = 0.3
+				end
+			end
+		end
+
+		controlsFrame.Visible = true
+		-- statFrame.Visible = false -- OLD LINE REMOVED (mainUpgradeFrame is handled by toggleTowerInfo)
+		selectedTower = nil
+	else
+		warn("AddPlaceholderTower: Tower prefab not found for name:", name)
+	end
+end
+
+-- ============================================
+--          StatFrame Logic
+-- ============================================
+
+
+local function populateUpgradeDescription(descriptionFrame, textTemplate, currentConfig, upgradeConfig)
+	for _, child in ipairs(descriptionFrame:GetChildren()) do
+		if child:IsA("TextLabel") and child.Name == textTemplate.Name then
+			child:Destroy()
+		end
+	end
+
+	if not upgradeConfig then -- Only need upgradeConfig to show what it *will* be
+		local noUpgradeLabel = textTemplate:Clone()
+		noUpgradeLabel.Name = textTemplate.Name
+		noUpgradeLabel.Text = "Maxed Out"
+		if descriptionFrame.Parent:FindFirstChild(textTemplate.Name.."CostButton") then -- Check if it's for a path box
+			local costButton = descriptionFrame.Parent:FindFirstChild(textTemplate.Name:gsub("UpgradeText", "Path").."CostButton")
+			if costButton then costButton.Text = "MAX" end
+		end
+		noUpgradeLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
+		noUpgradeLabel.Visible = true
+		noUpgradeLabel.Parent = descriptionFrame
+		return
+	end
+
+	local statsToDisplay = {
+		{ Key = "Damage", Label = "🗡", Suffix = "" }, -- Using icons as per your image
+		{ Key = "Cooldown", Label = "⏳", Suffix = "s" },
+		{ Key = "Range", Label = "🎯", Suffix = "" },
+		-- Add other stats if they are part of the upgrade description
+	}
+
+	local hasChanges = false
+	for _, statInfo in ipairs(statsToDisplay) do
+		local currentStatValueInstance = currentConfig and currentConfig:FindFirstChild(statInfo.Key) -- currentConfig can be nil if it's the first upgrade
+		local upgradeStatValueInstance = upgradeConfig:FindFirstChild(statInfo.Key)
+
+		local currentValue = currentStatValueInstance and currentStatValueInstance.Value
+		local upgradeValue = upgradeStatValueInstance and upgradeStatValueInstance.Value
+
+		if upgradeValue ~= nil then -- We must have an upgrade value to show something
+			local displayText
+			if currentValue ~= nil and currentValue ~= upgradeValue then
+				local roundedCurrent = typeof(currentValue) == "number" and tonumber(string.format("%.2g", currentValue)) or currentValue
+				local roundedUpgrade = typeof(upgradeValue) == "number" and tonumber(string.format("%.2g", upgradeValue)) or upgradeValue
+				displayText = string.format("%s %s → %s", statInfo.Label, tostring(roundedCurrent) .. statInfo.Suffix, tostring(roundedUpgrade) .. statInfo.Suffix)
+				hasChanges = true
+			elseif currentValue == nil then -- Stat is being added by this upgrade
+				local roundedUpgrade = typeof(upgradeValue) == "number" and tonumber(string.format("%.2g", upgradeValue)) or upgradeValue
+				displayText = string.format("%s Added: %s%s", statInfo.Label, tostring(roundedUpgrade), statInfo.Suffix)
+				hasChanges = true
+			elseif currentValue == upgradeValue then
+				-- Optionally show even if no change, or skip
+				-- displayText = string.format("%s %s%s (No Change)", statInfo.Label, tostring(upgradeValue), statInfo.Suffix)
+				-- hasChanges = true
+			end
+
+			if displayText then
+				local changeLabel = textTemplate:Clone()
+				changeLabel.Name = textTemplate.Name
+				changeLabel.Text = displayText
+				changeLabel.TextColor3 = Color3.fromRGB(255, 255, 255) -- Default white text
+				if currentValue and typeof(currentValue) == "number" and typeof(upgradeValue) == "number" then
+					if statInfo.Key == "Cooldown" then
+						if upgradeValue < currentValue then changeLabel.TextColor3 = Color3.fromRGB(89, 255, 0) end -- Green for better (lower) CD
+						if upgradeValue > currentValue then changeLabel.TextColor3 = Color3.fromRGB(255,100,100) end -- Red for worse CD
+					else
+						if upgradeValue > currentValue then changeLabel.TextColor3 = Color3.fromRGB(89, 255, 0) end -- Green for better
+						if upgradeValue < currentValue then changeLabel.TextColor3 = Color3.fromRGB(255,100,100) end -- Red for worse
+					end
+				elseif currentValue == nil then -- Stat being added is generally good
+					changeLabel.TextColor3 = Color3.fromRGB(100,255,100)
+				end
+				changeLabel.Visible = true
+				changeLabel.Parent = descriptionFrame
+			end
+		end
+	end
+	-- If you have a specific "AOE" or "Camo Detection" boolean in config, you can add it here:
+	-- Example for AOE (assuming a boolean ValueObject named "IsAOE" in config)
+	local upgradeIsAOE = upgradeConfig:FindFirstChild("IsAOE") and upgradeConfig.IsAOE.Value
+	local currentIsAOE = currentConfig and currentConfig:FindFirstChild("IsAOE") and currentConfig.IsAOE.Value
+	if upgradeIsAOE and not currentIsAOE then
+		local aoeLabel = textTemplate:Clone()
+		aoeLabel.Name = textTemplate.Name
+		aoeLabel.Text = "💣 AOE" -- Using bomb icon from your image
+		aoeLabel.TextColor3 = Color3.fromRGB(100, 200, 255)
+		aoeLabel.Visible = true
+		aoeLabel.Parent = descriptionFrame
+		hasChanges = true
+	end
+
+
+	if not hasChanges and not (upgradeConfig:FindFirstChild("IsAOE") and upgradeConfig.IsAOE.Value and not (currentConfig and currentConfig:FindFirstChild("IsAOE") and currentConfig.IsAOE.Value)) then
+		local noChangeLabel = textTemplate:Clone()
+		noChangeLabel.Name = textTemplate.Name
+		noChangeLabel.Text = "No Stat Changes"
+		noChangeLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
+		noChangeLabel.Visible = true
+		noChangeLabel.Parent = descriptionFrame
+	end
+end
+
+local function populateCurrentStats(towerModel)
+	-- Clear previous stat lines from statsPanel
+	for _, child in ipairs(statsPanel:GetChildren()) do
+		if child:IsA("TextLabel") and child.Name == statsTitle.Name then -- Check name to only remove cloned templates
+			child:Destroy()
+		end
+	end
+
+	if not towerModel or not towerModel.Parent then return end
+	local config = towerModel:FindFirstChild("Config")
+	if not config then return end
+
+	-- Note: Tower Name and Level are now set directly in toggleTowerInfo
+
+	local statsToDisplay = {
+		{ Key = "Damage", Label = "💥", Suffix = "" },
+		{ Key = "Cooldown", Label = "⏳", Suffix = "s" },
+		{ Key = "Range", Label = "🎯", Suffix = "" },
+	}
+
+	local statIndex = 1
+	for _, statInfo in ipairs(statsToDisplay) do
+		local statValueInstance = config:FindFirstChild(statInfo.Key)
+		if statValueInstance then
+			local statLabel = statsTitle:Clone() -- Clone the template from StatsPanel
+			statLabel.Name = statsTitle.Name     -- Keep original name for clearing
+			local val = statValueInstance.Value
+			local roundedVal = typeof(val) == "number" and tonumber(string.format("%.2g", val)) or val
+			statLabel.Text = string.format("%s %s%s", statInfo.Label, tostring(roundedVal), statInfo.Suffix)
+			statLabel.TextXAlignment = Enum.TextXAlignment.Left
+			statLabel.Font = Enum.Font.Gotham -- Or your preferred stat font
+			statLabel.TextSize = 14          -- Example size
+			statLabel.LayoutOrder = statIndex
+			statLabel.Visible = true
+			statLabel.Parent = statsPanel -- Parent to the StatsPanel
+			statIndex += 1
+		end
+	end
+
+	local totalDamageInst = towerModel:FindFirstChild("TotalDamageDealt")
+	if totalDamageInst then
+		local damageDealtLabel = statsTitle:Clone()
+		damageDealtLabel.Name = statsTitle.Name
+		damageDealtLabel.Text = "🗡 " .. (totalDamageInst.Value or 0)
+		damageDealtLabel.TextXAlignment = Enum.TextXAlignment.Left
+		damageDealtLabel.Font = Enum.Font.Gotham
+		damageDealtLabel.TextSize = 14
+		damageDealtLabel.LayoutOrder = statIndex
+		damageDealtLabel.Visible = true
+		damageDealtLabel.Parent = statsPanel
+	end
+end
+
+local function toggleTowerInfo()
+	-- Clear previous range/cone visuals
+	if currentRangeCircle and currentRangeCircle.Parent then
+		currentRangeCircle:Destroy()
+		currentRangeCircle = nil
+	end
+	if currentConeVisual and currentConeVisual.Parent then
+		currentConeVisual:Destroy()
+		currentConeVisual = nil
+	end
+	mainUpgradeFrame:SetAttribute("CurrentTowerGUID", nil)
+
+	if selectedTower and selectedTower.Parent == workspace.Towers then
+		local config = selectedTower:FindFirstChild("Config")
+		local levelInst = selectedTower:FindFirstChild("Level")
+
+		if not config then
+			warn("toggleTowerInfo: Selected tower is missing Config folder.")
+			selectedTower = nil
+			mainUpgradeFrame.Visible = false
+			return
+		end
+
+		local currentTowerGUID = selectedTower:GetAttribute("TowerGUID")
+		if not currentTowerGUID then
+			warn("toggleTowerInfo: Selected tower missing GUID!", selectedTower.Name)
+		end
+		mainUpgradeFrame:SetAttribute("CurrentTowerGUID", currentTowerGUID)
+
+		currentRangeCircle = CreateRangeCircle(selectedTower, false) -- This will call the new CreateRangeCircle
+		if config:FindFirstChild("IsConeAttacker") and config.IsConeAttacker.Value == true then
+			local coneRange = (config:FindFirstChild("Range") and tonumber(config.Range.Value)) or 0
+			local coneAngle = (config:FindFirstChild("AttackAngle") and tonumber(config.AttackAngle.Value)) or 60
+			if coneRange > 0 then
+				currentConeVisual = CreateConeVisual(selectedTower, coneRange, coneAngle)
+			end
+		end
+
+		mainUpgradeFrame.Visible = true
+
+		if sfTowerNameAndLevelLabel then
+			sfTowerNameAndLevelLabel.Text = string.format("%s (Level %d)", selectedTower.Name, levelInst and levelInst.Value or 0)
+		end
+		if sfLevelLabel_InLeftPanel then 
+			sfLevelLabel_InLeftPanel.Text = "Level: " .. (levelInst and levelInst.Value or 0)
+		end
+
+		local portraitImageValue = config:FindFirstChild("PortraitImage")
+		if portraitImageValue and sfTowerPortrait then
+			sfTowerPortrait.Image = portraitImageValue.Value
+		elseif sfTowerPortrait then
+			sfTowerPortrait.Image = ""
+		end
+
+		local isOwner = config:FindFirstChild("Owner") and (config.Owner.Value == player.Name)
+		if sfTargetButton then
+			sfTargetButton.Visible = isOwner
+			local targetModeValue = config:FindFirstChild("TargetMode")
+			sfTargetButton.Text = targetModeValue and ("Target: " .. targetModeValue.Value) or "Target: N/A"
+		end
+		if sfSellButton then
+			sfSellButton.Visible = isOwner
+			local priceValue = config:FindFirstChild("Price")
+			local sellPrice = priceValue and math.floor(tonumber(priceValue.Value) / 2) or 0
+			sfSellButton.Text = "Sell ($" .. sellPrice .. ")"
+		end
+
+		populateCurrentStats(selectedTower)
+
+		local chosenPath = selectedTower:GetAttribute("ChosenPath") or 0
+
+		-- Path 1
+		local upgradePath1Ref = config:FindFirstChild("UpgradePath1")
+		local upgrade1Prefab = upgradePath1Ref and upgradePath1Ref.Value
+		local upgrade1Config = upgrade1Prefab and upgrade1Prefab:FindFirstChild("Config")
+		local upgrade1Price = upgrade1Config and upgrade1Config:FindFirstChild("Price") and tonumber(upgrade1Config.Price.Value)
+
+		if path1Title then path1Title.Text = "Path 1" end
+		if upgrade1Prefab and path1Title then
+			path1Title.Text = upgrade1Prefab.Name
+		elseif path1Title then
+			path1Title.Text = "Path 1 Maxed"
+		end
+
+		if chosenPath == 0 or chosenPath == 1 then
+			populateUpgradeDescription(description1Frame, upgradeText1Template, config, upgrade1Config)
+			if path1CostButton then
+				path1CostButton.Visible = true
+				if upgrade1Config and upgrade1Price then
+					path1CostButton.Text = "$" .. upgrade1Price
+					path1CostButton.Active = isOwner and (player.Gold.Value >= upgrade1Price)
+				else
+					path1CostButton.Text = "MAX"
+					path1CostButton.Active = false
+					if path1Title and not upgrade1Prefab then path1Title.Text = "Path 1 Maxed" end
+				end
+			end
+		else
+			populateUpgradeDescription(description1Frame, upgradeText1Template, nil, nil)
+			if path1CostButton then
+				path1CostButton.Text = "Path Locked"
+				path1CostButton.Active = false
+			end
+			if path1Title then path1Title.Text = "Path 1: Locked" end
+		end
+
+		-- Path 2 (similar logic as Path 1)
+		local upgradePath2Ref = config:FindFirstChild("UpgradePath2")
+		local upgrade2Prefab = upgradePath2Ref and upgradePath2Ref.Value
+		local upgrade2Config = upgrade2Prefab and upgrade2Prefab:FindFirstChild("Config")
+		local upgrade2Price = upgrade2Config and upgrade2Config:FindFirstChild("Price") and tonumber(upgrade2Config.Price.Value)
+
+		if path2Title then path2Title.Text = "Path 2" end
+		if upgrade2Prefab and path2Title then
+			path2Title.Text = upgrade2Prefab.Name
+		elseif path2Title then
+			path2Title.Text = "Path 2 Maxed"
+		end
+
+		if chosenPath == 0 or chosenPath == 2 then
+			populateUpgradeDescription(description2Frame, upgradeText2Template, config, upgrade2Config)
+			if path2CostButton then
+				path2CostButton.Visible = true
+				if upgrade2Config and upgrade2Price then
+					path2CostButton.Text = "$" .. upgrade2Price
+					path2CostButton.Active = isOwner and (player.Gold.Value >= upgrade2Price)
+				else
+					path2CostButton.Text = "MAX"
+					path2CostButton.Active = false
+					if path2Title and not upgrade2Prefab then path2Title.Text = "Path 2 Maxed" end
+				end
+			end
+		else
+			populateUpgradeDescription(description2Frame, upgradeText2Template, nil, nil)
+			if path2CostButton then
+				path2CostButton.Text = "Path Locked"
+				path2CostButton.Active = false
+			end
+			if path2Title then path2Title.Text = "Path 2: Locked" end
+		end
+	else
+		selectedTower = nil
+		mainUpgradeFrame.Visible = false
+		mainUpgradeFrame:SetAttribute("CurrentTowerGUID", nil)
+	end
+end
+
+-- ============================================
+--          Core GUI & Game Logic
+-- ============================================
+
+local function updateTowerCountDisplay()
+	local cnt = serverPlacedTowersValue.Value
+	towersFrame.Title.Text = "Towers: " .. cnt .. "/" .. maxTowers
+end
+
+-- ### MODIFIED SpawnNewTower Function ###
+local function SpawnNewTower()
+	if canPlace and towerToSpawn then
+		local tN = towerToSpawn.Name
+		local pP = towerToSpawn.PrimaryPart
+		local sCF = pP and pP.CFrame
+		if typeof(tN) == "string" and sCF then
+			-- Call the server to spawn
+			local placeTower = spawnTowerFunction:InvokeServer(tN, sCF, nil) -- Server returns the placed tower instance
+
+			-- Check if server returned a valid instance
+			if typeof(placeTower) == "Instance" and placeTower:IsA("Model") and placeTower.Parent then
+				print("Client: Server placed tower:", placeTower.Name)
+				-- *** ADD RING FOR OWNER ***
+				AddOwnerRing(placeTower) -- Call the helper function for the newly placed tower
+				RemovePlaceholderTower() -- Remove placeholder *after* server confirms and ring is added
+			else
+				warn("Server fail place:", tN, "- Response:", placeTower)
+				RemovePlaceholderTower()
+			end
+		else
+			warn("Cannot place invalid name/cf")
+			RemovePlaceholderTower()
+		end
+	end
+end
+
+-- ============================================
+--          Button Connections
+-- ============================================
+
+if sfTargetButton then -- sfTargetButton is now mainUpgradeFrame.LeftPanel.TargetButton
+	sfTargetButton.Activated:Connect(function()
+		if selectedTower and selectedTower.Parent and sfTargetButton.Visible then
+			local config = selectedTower:FindFirstChild("Config")
+			if not config then return end
+
+			local ownerValue = config:FindFirstChild("Owner")
+			if ownerValue and ownerValue.Value == player.Name then
+				local success = changeModeFunction:InvokeServer(selectedTower)
+				if success then
+					toggleTowerInfo() -- Refresh UI to show new target mode
+				else
+					warn("Server failed to change target mode for:", selectedTower.Name)
+				end
+			end
+		end
+	end)
+end
+
+if sfSellButton then -- sfSellButton is now mainUpgradeFrame.LeftPanel.SellButton
+	sfSellButton.Activated:Connect(function()
+		if selectedTower and selectedTower.Parent and sfSellButton.Visible then
+			local config = selectedTower:FindFirstChild("Config")
+			if not config then return end
+
+			local ownerValue = config:FindFirstChild("Owner")
+			if ownerValue and ownerValue.Value == player.Name then
+				local success = sellTowerFunction:InvokeServer(selectedTower)
+				if success then
+					selectedTower = nil -- Clear selection as tower is gone
+					toggleTowerInfo() -- This will hide the mainUpgradeFrame
+				else
+					warn("Server failed to sell tower:", selectedTower.Name)
+					-- Optionally, refresh toggleTowerInfo anyway to ensure UI is consistent if server denied
+					if selectedTower and selectedTower.Parent then toggleTowerInfo() end
+				end
+			end
+		end
+	end)
+end
+
+-- ### MODIFIED Upgrade Button Logic (Inside sfUpgradeButton.Activated) ###
+path1CostButton.MouseButton1Click:Connect(function()
+	if upgradeButtonDebounce or not selectedTower or not selectedTower.Parent or not path1CostButton.Active then return end
+
+	local config = selectedTower:FindFirstChild("Config")
+	if not config then return end
+	local owner = config:FindFirstChild("Owner")
+	local upgradePath1Ref = config:FindFirstChild("UpgradePath1")
+
+	if owner and owner.Value == player.Name and upgradePath1Ref and upgradePath1Ref.Value then
+		local upgradePrefab = upgradePath1Ref.Value
+		local upgradeName = upgradePrefab.Name
+		local towerCF = selectedTower.PrimaryPart and selectedTower.PrimaryPart.CFrame
+
+		if not towerCF then warn("Upgrade Path 1: Selected tower has no PrimaryPart"); return end
+
+		upgradeButtonDebounce = true
+		path1CostButton.Active = false -- Prevent spam
+		path1CostButton.Text = "..."     -- Indicate processing
+
+		-- First, check if the upgrade is possible (price, limits etc.)
+		local canUpgrade = requestTowerFunction:InvokeServer(upgradeName, selectedTower, 1) -- Path index 1
+
+		if canUpgrade == true then -- Explicitly check for true, as it might return error strings
+			-- If check passes, then attempt to spawn/upgrade
+			local upgradedTower = spawnTowerFunction:InvokeServer(upgradeName, towerCF, selectedTower, 1) -- Path index 1
+
+			if typeof(upgradedTower) == "Instance" and upgradedTower:IsA("Model") and upgradedTower.Parent then
+				selectedTower = upgradedTower
+				AddOwnerRing(upgradedTower)
+				toggleTowerInfo() -- Refresh UI for the NEW tower
+			else
+				warn("Client: Server failed upgrade for path 1 to", upgradeName, "- Response:", upgradedTower)
+				-- If failed, re-enable button and refresh UI (which might show original state or error)
+				if selectedTower and selectedTower.Parent then toggleTowerInfo()
+				else selectedTower = nil; toggleTowerInfo() end
+			end
+		else
+			warn("Client: Pre-check for upgrade path 1 to", upgradeName, "failed. Reason:", canUpgrade)
+			if selectedTower and selectedTower.Parent then toggleTowerInfo() end -- Refresh UI to show original state/cost
+		end
+
+		task.delay(DEBOUNCE_TIME, function() upgradeButtonDebounce = false end)
+		-- The toggleTowerInfo() call will reset the button text and active state if the upgrade didn't happen or for the new tower
+	else
+		warn("Client: Path 1 Upgrade conditions not met.")
+		if selectedTower then toggleTowerInfo() end -- Refresh UI
+		task.delay(DEBOUNCE_TIME, function() upgradeButtonDebounce = false end)
+	end
+end)
+
+path2CostButton.MouseButton1Click:Connect(function()
+	if upgradeButtonDebounce or not selectedTower or not selectedTower.Parent or not path2CostButton.Active then return end
+
+	local config = selectedTower:FindFirstChild("Config")
+	if not config then return end
+	local owner = config:FindFirstChild("Owner")
+	local upgradePath2Ref = config:FindFirstChild("UpgradePath2")
+
+	if owner and owner.Value == player.Name and upgradePath2Ref and upgradePath2Ref.Value then
+		local upgradePrefab = upgradePath2Ref.Value
+		local upgradeName = upgradePrefab.Name
+		local towerCF = selectedTower.PrimaryPart and selectedTower.PrimaryPart.CFrame
+
+		if not towerCF then warn("Upgrade Path 2: Selected tower has no PrimaryPart"); return end
+
+		upgradeButtonDebounce = true
+		path2CostButton.Active = false
+		path2CostButton.Text = "..."
+
+		local canUpgrade = requestTowerFunction:InvokeServer(upgradeName, selectedTower, 2) -- Path index 2
+
+		if canUpgrade == true then
+			local upgradedTower = spawnTowerFunction:InvokeServer(upgradeName, towerCF, selectedTower, 2) -- Path index 2
+
+			if typeof(upgradedTower) == "Instance" and upgradedTower:IsA("Model") and upgradedTower.Parent then
+				selectedTower = upgradedTower
+				AddOwnerRing(upgradedTower)
+				toggleTowerInfo()
+			else
+				warn("Client: Server failed upgrade for path 2 to", upgradeName, "- Response:", upgradedTower)
+				if selectedTower and selectedTower.Parent then toggleTowerInfo()
+				else selectedTower = nil; toggleTowerInfo() end
+			end
+		else
+			warn("Client: Pre-check for upgrade path 2 to", upgradeName, "failed. Reason:", canUpgrade)
+			if selectedTower and selectedTower.Parent then toggleTowerInfo() end
+		end
+		task.delay(DEBOUNCE_TIME, function() upgradeButtonDebounce = false end)
+	else
+		warn("Client: Path 2 Upgrade conditions not met.")
+		if selectedTower then toggleTowerInfo() end
+		task.delay(DEBOUNCE_TIME, function() upgradeButtonDebounce = false end)
+	end
+end)
+
+controlsFrame.Cancel.Activated:Connect(RemovePlaceholderTower)
+
+-- ============================================
+--          Input Handling
+-- ============================================
+
+UserInputService.InputBegan:Connect(function(inp, proc)
+	if proc then -- If input is processed by other UI (e.g., TextBox), ignore it
+		return
+	end
+	local kC = inp.KeyCode
+	local iT = inp.UserInputType
+	local slotIndex = 0 -- Renamed from sI for clarity
+
+	-- Tower Placement Hotkeys (1-4) - YOUR EXISTING LOGIC
+	if iT == Enum.UserInputType.Keyboard then
+		if kC == Enum.KeyCode.One then
+			slotIndex = 1
+		elseif kC == Enum.KeyCode.Two then
+			slotIndex = 2
+		elseif kC == Enum.KeyCode.Three then
+			slotIndex = 3
+		elseif kC == Enum.KeyCode.Four then
+			slotIndex = 4
+		end
+	end
+	if slotIndex > 0 then
+		local towerNameFromSlot = selectedTowerSlots[slotIndex] -- Ensure selectedTowerSlots is populated correctly in SetupGameGui
+		if towerNameFromSlot then
+			-- Pass nil for 'previous' and 'pathIndex' as this is a new placement request
+			local canPlaceTower = requestTowerFunction:InvokeServer(towerNameFromSlot, nil, nil)
+			if canPlaceTower == true then -- Explicitly check for true
+				AddPlaceholderTower(towerNameFromSlot)
+			else
+				print("Cannot place tower via hotkey:", towerNameFromSlot, "Reason:", canPlaceTower)
+			end
+		end
+		return -- Processed hotkey, exit
+	end
+
+	-- Placeholder Active Controls (Place, Rotate, Cancel) - YOUR EXISTING LOGIC
+	if towerToSpawn then
+		if iT == Enum.UserInputType.MouseButton1 then
+			SpawnNewTower()
+		elseif iT == Enum.UserInputType.Touch then
+			local timeSinceLastTouch = tick() - lastTouch
+			if timeSinceLastTouch <= 0.25 then
+				SpawnNewTower()
+			end
+			lastTouch = tick()
+		elseif iT == Enum.UserInputType.Keyboard then
+			if kC == Enum.KeyCode.R then
+				rotation = (rotation + 90) % 360
+			elseif kC == Enum.KeyCode.Q or kC == Enum.KeyCode.X or kC == Enum.KeyCode.C or kC == Enum.KeyCode.Escape then
+				RemovePlaceholderTower()
+			end
+		end
+		return -- Processed placeholder control, exit
+	end
+
+	-- Tower Selection / MainUpgradeFrame Interaction / Hotkeys
+	if (iT == Enum.UserInputType.MouseButton1 or iT == Enum.UserInputType.Touch) then
+		local clickRay = MouseRaycast(nil)
+		local clickedInstance = clickRay and clickRay.Instance
+		local modelAncestor = clickedInstance and clickedInstance:FindFirstAncestorWhichIsA("Model")
+
+		if modelAncestor and modelAncestor.Parent == workspace.Towers then
+			if selectedTower == modelAncestor and mainUpgradeFrame.Visible then
+				-- Clicking the same tower again, do nothing or optionally close frame
+			else
+				selectedTower = modelAncestor
+				toggleTowerInfo()
+			end
+		else
+			-- Clicked off a tower, or on UI (proc should handle UI clicks if they are buttons etc.)
+			if mainUpgradeFrame.Visible then
+				local mouseLocation = UserInputService:GetMouseLocation()
+				local guiObjectsAtPos = player.PlayerGui:GetGuiObjectsAtPosition(mouseLocation.X, mouseLocation.Y)
+				local clickedOnUpgradeFrame = false
+				for _, obj in ipairs(guiObjectsAtPos) do
+					if obj:IsDescendantOf(mainUpgradeFrame) then
+						clickedOnUpgradeFrame = true
+						break
+					end
+				end
+				if not clickedOnUpgradeFrame then
+					selectedTower = nil
+					toggleTowerInfo() -- This will hide the frame
+				end
+			end
+		end
+	elseif iT == Enum.UserInputType.Keyboard and kC == Enum.KeyCode.Escape and mainUpgradeFrame.Visible then
+		selectedTower = nil
+		toggleTowerInfo() -- This will hide the frame
+	-- Hotkeys for new upgrade path buttons (Example: E for Path 1, Q for Path 2)
+	elseif iT == Enum.UserInputType.Keyboard and (kC == Enum.KeyCode.E or kC == Enum.KeyCode.ButtonY) then
+		if selectedTower and mainUpgradeFrame.Visible and path1CostButton.Active then
+			path1CostButton.Activated:Fire() -- Simulate click
+		end
+	elseif iT == Enum.UserInputType.Keyboard and (kC == Enum.KeyCode.Q or kC == Enum.KeyCode.ButtonX) then
+		if selectedTower and mainUpgradeFrame.Visible and path2CostButton.Active then
+			path2CostButton.Activated:Fire() -- Simulate click
+		end
+	-- Hotkey for Sell Button (Example: Z or R1)
+	elseif iT == Enum.UserInputType.Keyboard and (kC == Enum.KeyCode.Z or kC == Enum.KeyCode.ButtonR1) then
+		if selectedTower and mainUpgradeFrame.Visible and sfSellButton.Active then
+			sfSellButton.Activated:Fire()
+		end
+	end
+end)
+
+
+
+-- ============================================
+--          Render Step
+-- ============================================
+
+-- REPLACE your existing RenderStepped function with this one
+-- REPLACE the RenderStepped function AGAIN with this revised version
+RunService.RenderStepped:Connect(function()
+	local result = MouseRaycast(towerToSpawn) -- Perform raycast
+
+	if towerToSpawn and towerToSpawn.PrimaryPart then -- Check if placing a tower and it has a PrimaryPart
+		hoveredInstance = nil -- Not hovering over anything selectable while placing
+		local primaryPart = towerToSpawn.PrimaryPart
+		primaryPart.Anchored = true -- *** ENSURE PART IS ANCHORED while tweening ***
+
+		if result and result.Instance then -- Check if the mouse hit something
+			local hitPosition = result.Position
+			local validPlacement = (result.Instance.Parent.Name == "TowerArea") -- Check if it's a valid placement area
+
+			-- Check for collisions (same as before)
+			local touching = false
+			local partsInPart = workspace:GetPartsInPart(primaryPart)
+			for _, part in ipairs(partsInPart) do
+				if part.CanCollide and part.Parent ~= towerToSpawn and part.Name ~= "Range" and part.Name ~= "Floor" and part.Name ~= "Baseplate" and part.Parent.Name ~= "TowerArea" and not part:IsDescendantOf(player.Character or Instance.new("Model")) then
+					touching = true
+					break
+				end
+			end
+
+			-- Determine placement validity and color (same as before)
+			if touching or not validPlacement then
+				canPlace = false
+				ColorPlaceholderTower(Color3.new(1, 0, 0)) -- Red if invalid
+			else
+				canPlace = true
+				ColorPlaceholderTower(Color3.new(0, 1, 0)) -- Green if valid
+			end
+
+			-- Calculate target position (same as before)
+			local targetY = hitPosition.Y + towerToSpawn.Humanoid.HipHeight + (primaryPart.Size.Y / 2)
+			local targetPosition = Vector3.new(hitPosition.X, targetY, hitPosition.Z)
+
+			-- Calculate target CFrame without sway first
+			local targetCFrameWithoutSway = CFrame.new(targetPosition) * CFrame.Angles(0, Rad(rotation), 0)
+
+			-- Initialize or use OldCFrame
+			if OldCFrame == nil then
+				-- If first frame, set OldCFrame to the target and position directly
+				OldCFrame = targetCFrameWithoutSway
+				primaryPart.CFrame = OldCFrame -- Set initial CFrame directly
+			end
+
+			-- Calculate sway based on movement *from the last frame's target*
+			local movement = targetCFrameWithoutSway.Position - OldCFrame.Position -- Calculate delta from last *intended* position
+			local angleX = math.clamp(Rad(-movement.Z * sway), Rad(-MaxAngle), Rad(MaxAngle))
+			local angleZ = math.clamp(Rad(movement.X * sway), Rad(-MaxAngle), Rad(MaxAngle))
+
+			-- Combine sway angles with the base rotation
+			local swayAngles = CFrame.Angles(angleX, 0, angleZ)
+			local finalTargetCFrame = targetCFrameWithoutSway * swayAngles
+
+			-- Tween the tower to the final CFrame with sway
+			-- IMPORTANT: Check if the target CFrame is actually different before creating a new tween
+			-- This helps prevent unnecessary tween spam if the mouse isn't moving much
+			if primaryPart.CFrame ~= finalTargetCFrame then
+				TweenService:Create(primaryPart, TweenInfoSway, {CFrame = finalTargetCFrame}):Play()
+			end
+
+			-- Update OldCFrame for the next frame's calculation *after* calculating sway
+			OldCFrame = targetCFrameWithoutSway -- Store the non-swayed target for the next frame's delta calculation
+
+		else -- Mouse didn't hit anything valid
+			canPlace = false
+			ColorPlaceholderTower(Color3.new(1, 0, 0)) -- Red if invalid position
+			-- If the mouse goes off valid ground, keep the tower visually where it was,
+			-- but reset OldCFrame so the next valid placement starts fresh.
+			OldCFrame = nil -- Reset OldCFrame if mouse is off valid area
+			-- Consider stopping any active tweens here? Might not be necessary.
+		end
+
+	else -- Not placing a tower (towerToSpawn is nil or has no PrimaryPart)
+		if towerToSpawn and not towerToSpawn.PrimaryPart then
+			-- Cleanup if the placeholder somehow lost its primary part
+			RemovePlaceholderTower()
+		end
+		hoveredInstance = result and result.Instance -- Update hoveredInstance if mouse hit something
+		if OldCFrame ~= nil then
+			OldCFrame = nil -- Reset OldCFrame when not actively placing
+		end
+	end
+
+	-- Rest of the RenderStepped function (e.g., updating StatFrame damage - though likely handled by events now)
+	-- ...
+
+end)
+
+local function DisplayEndScreen(status)
+	local s = endScreenFrame
+	if not s then
+		return
+	end
+
+	if status == "GAME OVER" then
+		s.Failure:Play()
+		s.Content.Title.TextColor3 = Color3.new(1, 0, 0)
+		s.ImageColor3 = Color3.new(0, 0, 0)
+		s.Content.Subtitle.Text = "Better luck next time"
+	elseif status == "VICTORY" then
+		s.Victory:Play()
+		s.Content.Title.TextColor3 = Color3.new(0, 1, 0)
+		s.ImageColor3 = Color3.new(0.6, 1, 0.4)
+		s.Content.Subtitle.Text = "You won!"
+	end
+
+	local ci = info
+	local C = 0
+	local wV = ci:FindFirstChild("Wave")
+	local mV = ci:FindFirstChild("Message")
+	if wV and mV then
+		if mV.Value == "VICTORY" then
+			C = 12
+		else
+			C = math.max(0, wV.Value - 1) * 2
+		end
+	end
+	s.Content.Title.Text = status
+	s.Stats.Coins.Text = "Coins: " .. C
+
+	if not s.Visible then
+		s.Size = UDim2.new(0, 0, 0, 0)
+		s.Visible = true
+		local tS = TweenInfo.new(0.5, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
+		local zT = TweenService:Create(s, tS, { Size = UDim2.new(1, 0, 1, 0) })
+		zT:Play()
+	end
+
+	local exE = events.ExitGame
+	local exB = s:FindFirstChild("Exit")
+	if exB then
+		local cExC = exB:FindFirstChild("ExitClickConnection")
+		if cExC then
+			cExC:Disconnect()
+		end
+		local nExC -- Need to predefine for disconnect inside
+		nExC = exB.Activated:Connect(function()
+			exE:FireServer()
+			s.Visible = false
+			if nExC then
+				nExC:Disconnect()
+			end
+		end)
+	end
+end
+
+-- ============================================
+--          GUI Setup Functions
+-- ============================================
+
+local function SetupGameGui()
+	if not info or not info:FindFirstChild("GameRunning") or not info.GameRunning.Value then
+		return
+	end
+	mapVotingFrame.Visible = false
+	infoFrame.Health.Visible = true
+	infoFrame.Stats.Visible = true
+	towersFrame.Visible = true
+	-- statFrame.Visible = false -- OLD LINE REMOVED (mainUpgradeFrame is handled by toggleTowerInfo)
+
+	local m = workspace.Map:FindFirstChildOfClass("Folder")
+	if m then
+		local b = m:WaitForChild("Base")
+		if b then
+			health.Setup(b, infoFrame.Health)
+		end
+	else
+		local mapAddConn -- Predefine
+		mapAddConn = workspace.Map.ChildAdded:Connect(function(nM)
+			if nM:IsA("Folder") then
+				local b = nM:WaitForChild("Base")
+				if b then
+					health.Setup(b, infoFrame.Health)
+				end
+				if mapAddConn then
+					mapAddConn:Disconnect()
+					mapAddConn = nil
+				end
+			end
+		end)
+	end
+	for _, mb in ipairs(workspace.Mobs:GetChildren()) do
+		health.Setup(mb)
+	end
+	workspace.Mobs.ChildAdded:Connect(function(mb)
+		health.Setup(mb)
+	end)
+	local wV = info:WaitForChild("Wave")
+	infoFrame.Stats.Wave.Text = "Wave:" .. wV.Value
+	wV.Changed:Connect(function(c)
+		infoFrame.Stats.Wave.Text = "Wave:" .. c
+	end)
+	infoFrame.Stats.Gold.Text = "$" .. gold.Value
+	gold.Changed:Connect(function(c)
+		infoFrame.Stats.Gold.Text = "$" .. c
+	end)
+	updateTowerCountDisplay()
+	serverPlacedTowersValue.Changed:Connect(updateTowerCountDisplay)
+	selectedTowerSlots = {}
+	local tmpl = towersFrame:FindFirstChild("Template")
+	if tmpl then
+		tmpl.Visible = false
+	end
+	for _, b in ipairs(towersFrame:GetChildren()) do
+		if b:IsA("ImageButton") and b.Name ~= "Template" then
+			b:Destroy()
+		end
+	end
+	local pD = getDataFunction:InvokeServer()
+	if pD and pD.SelectedTowers then
+		local sI = 1
+		for _, tN in ipairs(pD.SelectedTowers) do
+			local tD = towers:FindFirstChild(tN)
+			if tD then
+				local cfg = tD:FindFirstChild("Config")
+				if cfg then
+					local iV = cfg:FindFirstChild("Image") -- This was for the old tower bar icons
+					local pV = cfg:FindFirstChild("Price")
+					local btn = tmpl:Clone()
+					btn.Name = tD.Name
+					local iL = btn:FindFirstChild("TowerIcon")
+					if iL and iV then
+						iL.Image = iV.Texture
+					elseif iV then -- If TowerIcon doesn't exist, try setting Image on button itself
+						btn.Image = iV.Texture
+					else
+						warn("No Img ValueObject or TowerIcon for tower bar:", tN)
+					end
+					local pL = btn:FindFirstChild("price")
+					if pL then
+						if pV then
+							pL.Text = "$" .. tostring(pV.Value)
+						else
+							pL.Text = "$???"
+						end
+					else
+						warn("No price TextLabel child in tower bar template for:", tN)
+					end
+					btn.LayoutOrder = sI
+					btn.Visible = true
+					btn.Parent = towersFrame
+					btn.Activated:Connect(function()
+						-- Pass nil for 'previous' and 'pathIndex' for new placement request
+						local ok = requestTowerFunction:InvokeServer(tD.Name, nil, nil)
+						if ok == true then -- Explicitly check for true
+							AddPlaceholderTower(tD.Name)
+						else
+							print("Cannot place tower from bar:", tD.Name, "Reason:", ok)
+						end
+					end)
+					if sI <= 4 then
+						selectedTowerSlots[sI] = tN
+					end
+					sI += 1
+				else
+					warn("No Config folder in tower prefab for tower bar:", tN)
+				end
+			else
+				warn("No tower prefab found for tower bar:", tN)
+			end
+		end
+	else
+		warn("No PlayerData or SelectedTowers found for tower bar.")
+	end
+end
+
+local function SetupVoteGui() -- MAP Voting
+	if not info or not info:FindFirstChild("Voting") or not info.Voting.Value then
+		mapVotingFrame.Visible = false
+		return
+	end
+	mapVotingFrame.Visible = true
+	local vE = VoteForMapEvent
+	local vCU = UpdateMapVoteCountEvent
+	local mC = mapVotingFrame:FindFirstChild("Maps")
+	if not mC then
+		return
+	end
+	for _, oC in pairs(voteButtonConnections) do
+		oC:Disconnect()
+	end
+	voteButtonConnections = {}
+	if voteCountConnection then
+		voteCountConnection:Disconnect()
+		voteCountConnection = nil
+	end
+	for _, b in ipairs(mC:GetChildren()) do
+		if b:IsA("ImageButton") then
+			local nC = b.Activated:Connect(function()
+				vE:FireServer(b.Name)
+			end)
+			voteButtonConnections[b] = nC
+		end
+	end
+	voteCountConnection = vCU.OnClientEvent:Connect(function(mS)
+		if not mC or not mC.Parent then
+			if voteCountConnection then
+				voteCountConnection:Disconnect()
+				voteCountConnection = nil
+			end
+			return
+		end
+		if not mapVotingFrame.Visible then
+			return
+		end
+		for nm, vI in pairs(mS) do
+			local b = mC:FindFirstChild(nm)
+			if b then
+				local vL = b:FindFirstChild("Vote")
+				if vL and vL:IsA("TextLabel") then
+					vL.Text = #vI
+				end
+			end
+		end
+	end)
+end
+
+-- ============================================
+--          INITIALIZATION
+-- ============================================
+
+local function LoadGui()
+	if not info then
+		warn("No Info!")
+		return
+	end
+	local mL = infoFrame:FindFirstChild("Message")
+	local mV = info:FindFirstChild("Message")
+	if msgChangedConnection then
+		msgChangedConnection:Disconnect()
+		msgChangedConnection = nil
+	end
+	if gameRunningConnection then
+		gameRunningConnection:Disconnect()
+		gameRunningConnection = nil
+	end
+	if votingChangedConnection then
+		votingChangedConnection:Disconnect()
+		votingChangedConnection = nil
+	end
+	if mL and mV then
+		mL.Text = mV.Value
+		msgChangedConnection = mV.Changed:Connect(function(c)
+			if mL and mL.Parent then
+				mL.Text = c
+				mL.Visible = (c ~= "")
+				if c == "VICTORY" or c == "GAME OVER" then
+					DisplayEndScreen(c)
+				end
+			else
+				if msgChangedConnection then
+					msgChangedConnection:Disconnect()
+					msgChangedConnection = nil
+				end
+			end
+		end)
+	end
+	SetupVoteGui()
+	SetupGameGui()
+	gameRunningConnection = info:WaitForChild("GameRunning").Changed:Connect(SetupGameGui)
+	votingChangedConnection = info:WaitForChild("Voting").Changed:Connect(SetupVoteGui)
+end
+
+
+-- Speed Button Connections (Using RemoteEvent)
+if speed1xButton then
+	speed1xButton.Activated:Connect(function()
+		-- Send request to server instead of changing value directly
+		RequestGameSpeedChangeEvent:FireServer(1)
+	end)
+end
+
+if speed2xButton then
+	speed2xButton.Activated:Connect(function()
+		-- Send request to server instead of changing value directly
+		RequestGameSpeedChangeEvent:FireServer(2)
+	end)
+end
+
+
+-- Listen for changes to the GameSpeed value (e.g., from server or other clients if replicated)
+GameSpeedValue.Changed:Connect(UpdateSpeedButtonVisuals)
+
+-- Initial visual update for speed buttons when the script loads
+UpdateSpeedButtonVisuals()
+
+-- ============================================
+--          FINAL CONNECTIONS & LOAD
+-- ============================================
+
+
+-- Total Damage Update Listener (Using GUID Method)
+updateTotalDamageEvent.OnClientEvent:Connect(function(tGUID, newDmg)
+	local guidOnFrame = mainUpgradeFrame:GetAttribute("CurrentTowerGUID")
+	if mainUpgradeFrame.Visible and guidOnFrame and tGUID == guidOnFrame and selectedTower then
+		-- Update the TotalDamageDealt value on the client-side tower model if it exists
+		local totalDamageInst = selectedTower:FindFirstChild("TotalDamageDealt")
+		if totalDamageInst then
+			totalDamageInst.Value = newDmg -- Keep client model in sync
+		end
+		populateCurrentStats(selectedTower) -- Refresh the stats panel which includes total damage
+	end
+end)
+
+AnimateDamageIndicatorEvent.OnClientEvent:Connect(function(billboardGuiInstance, hitPosition, isCriticalHit)
+	-- Client now receives the BillboardGui instance from the server
+	if not billboardGuiInstance or not billboardGuiInstance:IsA("BillboardGui") then
+		warn("AnimateDamageIndicatorEvent: Received invalid billboardGuiInstance")
+		if billboardGuiInstance and typeof(billboardGuiInstance) == "Instance" then billboardGuiInstance:Destroy() end
+		return
+	end
+	if not typeof(hitPosition) == "Vector3" then
+		warn("AnimateDamageIndicatorEvent: Received invalid hitPosition")
+		if billboardGuiInstance and typeof(billboardGuiInstance) == "Instance" then billboardGuiInstance:Destroy() end
+		return
+	end
+
+	-- Create a temporary anchor part for the BillboardGui
+	local anchorPart = Instance.new("Part")
+	anchorPart.Name = "DamageIndicatorAnchor_CLI_" .. math.random(10000)
+	anchorPart.Size = Vector3.new(0.1, 0.1, 0.1)
+	anchorPart.Transparency = 1
+	anchorPart.Anchored = true
+	anchorPart.CanCollide = false
+	anchorPart.CFrame = CFrame.new(hitPosition) 
+	anchorPart.Parent = workspace.Camera -- Or a dedicated client effects folder
+
+	-- Re-parent the received BillboardGui and set its Adornee
+	billboardGuiInstance.Parent = anchorPart 
+	billboardGuiInstance.Adornee = anchorPart
+	-- The server already configured Size, StudsOffset, TextLabel properties.
+	-- We can override StudsOffset if needed, but server's initial should be fine.
+	-- billboardGuiInstance.StudsOffset = Vector3.new(0, 1.5, 0) -- If you want to ensure client-side offset
+
+	local textLabel = billboardGuiInstance:FindFirstChild("DamageText")
+	if not textLabel then
+		warn("AnimateDamageIndicatorEvent: BillboardGuiInstance missing DamageText child.")
+		anchorPart:Destroy() -- Cleanup anchor
+		if billboardGuiInstance and billboardGuiInstance.Parent then billboardGuiInstance:Destroy() end
+		return
+	end
+
+	-- Animation properties for the ARC
+	local arcHeight = 1.8       
+	local arcWidth = math.random(-15, 15) / 10 
+	local arcDuration = 0.7    
+
+	local totalVisibleDuration = arcDuration + 0.2
+	local fadeStartDelay = arcDuration * 0.6
+	local fadeOutDuration = totalVisibleDuration - fadeStartDelay
+
+	local initialStudsOffset = billboardGuiInstance.StudsOffset 
+
+	local progress = Instance.new("NumberValue")
+	progress.Value = 0
+	progress.Parent = billboardGuiInstance 
+
+	local connection
+	connection = progress.Changed:Connect(function(t)
+		if not billboardGuiInstance or not billboardGuiInstance.Parent then
+			if connection then connection:Disconnect() end
+			if progress and progress.Parent then progress:Destroy() end
+			return
+		end
+		local yOffset = -4 * arcHeight * t * (t - 1) 
+		local xOffset = arcWidth * t
+		billboardGuiInstance.StudsOffset = initialStudsOffset + Vector3.new(xOffset, yOffset, 0)
+	end)
+
+	local arcTween = TweenService:Create(progress, TweenInfo.new(arcDuration, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Value = 1})
+	arcTween:Play()
+
+	arcTween.Completed:Connect(function()
+		if connection then connection:Disconnect() end
+		if progress and progress.Parent then progress:Destroy() end
+	end)
+
+	task.wait(fadeStartDelay) 
+
+	if textLabel and textLabel.Parent then
+		local fadeOutTween = TweenService:Create(textLabel, TweenInfo.new(fadeOutDuration, Enum.EasingStyle.Linear), {
+			TextTransparency = 1,
+			TextStrokeTransparency = 1
+		})
+		fadeOutTween:Play()
+		fadeOutTween.Completed:Connect(function()
+			if anchorPart and anchorPart.Parent then
+				anchorPart:Destroy()
+			end
+		end)
+	else
+		if anchorPart and anchorPart.Parent then
+			anchorPart:Destroy()
+		end
+	end
+end)
+
+-- Mode Voting Event Listeners
+local function UpdateModeVoteCounts(mVD)
+	if not votingModeFrame.Visible or not mVD then
+		return
+	end
+	local eC = (mVD.Easy and #mVD.Easy) or 0
+	local iC = (mVD.InfMode and #mVD.InfMode) or 0
+	if easyModeButton then
+		local vL = easyModeButton:FindFirstChild("Vote")
+		if vL then
+			vL.Text = tostring(eC)
+		end
+	end
+	if infModeButton then
+		local vL = infModeButton:FindFirstChild("Vote")
+		if vL then
+			vL.Text = tostring(iC)
+		end
+	end
+end
+local function ShowModeVotingUI(initVD)
+	print("Show Mode Vote")
+	mapVotingFrame.Visible = false
+	votingModeFrame.Visible = true
+	modeVoteActive = true
+	UpdateModeVoteCounts(initVD or { Easy = {}, InfMode = {} })
+end
+local function HideModeVotingUI()
+	print("Hide Mode Vote")
+	votingModeFrame.Visible = false
+	modeVoteActive = false
+end
+local function UpdateNextWaveUI(spL)
+	for _, c in ipairs(nextWaveFrame:GetChildren()) do
+		if c:IsA("TextLabel") and c.Name == nextWaveTemplate.Name then
+			c:Destroy()
+		end
+	end
+	if currentSelectedMode ~= "Endless" or not spL or #spL == 0 then
+		nextWaveFrame.Visible = false
+		return
+	end
+	nextWaveFrame.Visible = true
+	local lO = 1
+	for _, sI in ipairs(spL) do
+		local lC = nextWaveTemplate:Clone()
+		lC.Text = sI.Name .. " x" .. sI.Quantity
+		lC.LayoutOrder = lO
+		lC.Visible = true
+		lC.Parent = nextWaveFrame
+		lO += 1
+	end
+end
+
+ShowModeVoteEvent.OnClientEvent:Connect(ShowModeVotingUI)
+HideModeVoteEvent.OnClientEvent:Connect(HideModeVotingUI)
+UpdateModeVoteCountEvent.OnClientEvent:Connect(UpdateModeVoteCounts)
+GameModeSelectedEvent.OnClientEvent:Connect(function(selMode)
+	print("Client Mode:", selMode)
+	currentSelectedMode = selMode
+	UpdateNextWaveUI(nil)
+end)
+UpdateNextWaveDisplayEvent.OnClientEvent:Connect(UpdateNextWaveUI)
+HideNextWaveDisplayEvent.OnClientEvent:Connect(function()
+	nextWaveFrame.Visible = false
+end)
+
+-- Mode Vote Button Connections
+if easyModeButton then
+	easyModeButton.Activated:Connect(function()
+		if modeVoteActive then
+			VoteForModeEvent:FireServer("Easy")
+		end
+	end)
+end
+if infModeButton then
+	infModeButton.Activated:Connect(function()
+		if modeVoteActive then
+			VoteForModeEvent:FireServer("InfMode")
+		end
+	end)
+end
+
+-- Initial Load Call
+LoadGui()
+
+print("GameController (v8 - Owner Ring Added + Reformat) Loaded.")
